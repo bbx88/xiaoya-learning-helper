@@ -1,0 +1,21 @@
+# Local Node dependencies; keep .tools/package*.json for reproducible tests.
+node_modules/
+
+# Isolated Chrome profiles created by local tests and screenshot checks.
+.tools/navigation-profile-*/
+preview/profile-*/
+
+# Generated previews; publish selected screenshots under docs/images/.
+preview/*.html
+preview/*.png
+
+# Downloaded website bundles and historical copies are local references.
+reference/
+design/
+
+# Runtime logs and OS files.
+*.log
+node_trace.*
+.DS_Store
+Thumbs.db
+Desktop.ini
