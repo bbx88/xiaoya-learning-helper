@@ -341,11 +341,14 @@ test('entering the course scores page fetches tasks and historical time before o
     env.dom.window.close();
 });
 
-test('PPT waits two minutes then advances without inventing a platform completion or adding to historical time', async () => {
-    const env = await setup({ resources: [
+test('PPT waits two minutes, clicks the platform completion control, then advances without changing historical time', async () => {
+    const taskStates = { '301': { finished: false } };
+    const env = await setup({ taskStates, resources: [
         { id: '301', parent_id: '200', type: 6, task_type: 1, task_id: 'ppt-task', name: '1.pptx' },
         { id: '302', parent_id: '200', type: 9, name: '2.mp4' }
     ] });
+    env.win.document.body.insertAdjacentHTML('afterbegin', '<div class="group-resource-header"><div class="header-file">1.pptx</div><div class="ta_icon_btn"><i class="xy_btn_task_normal"></i>点我完成任务</div></div>');
+    env.win.document.querySelector('.ta_icon_btn').onclick = () => { taskStates['301'].finished = true; };
     await env.start();
     assert.equal(env.ui.querySelector('[data-state]').textContent, '阅读中');
     assert.equal(env.ui.querySelector('[data-duration]').textContent, '02:00');
@@ -355,7 +358,7 @@ test('PPT waits two minutes then advances without inventing a platform completio
     env.advance(1000); await env.tick(); await env.timers();
     assert.equal(env.ui.querySelector('[data-state]').textContent, '跳转中');
     assert.equal(JSON.parse(env.win.sessionStorage.getItem('xy-video-helper-v1')).navigation.node, '302');
-    assert.equal(env.ui.querySelector('[data-completion-for="301"]').textContent, '未完成');
+    assert.equal(env.ui.querySelector('[data-completion-for="301"]').textContent, '已完成');
     assert.equal(env.ui.querySelector('[data-history]').textContent, '41 分钟');
     assert.equal(env.playCount(), 0);
     env.dom.window.close();
@@ -463,15 +466,18 @@ test('single-resource video ends without navigation and can be explicitly restar
 });
 
 test('single-resource PPT ends at its planned duration without moving to the next task', async () => {
-    const env = await setup({ resources: [
+    const taskStates = { '301': { finished: false } };
+    const env = await setup({ taskStates, resources: [
         { id: '301', parent_id: '200', type: 6, task_type: 1, task_id: 'ppt-task', name: '1.pptx' },
         { id: '302', parent_id: '200', type: 9, name: '2.mp4' }
     ] });
+    env.win.document.body.insertAdjacentHTML('afterbegin', '<div class="group-resource-header"><div class="header-file">1.pptx</div><div class="ta_icon_btn"><i class="xy_btn_task_normal"></i>点我完成任务</div></div>');
+    env.win.document.querySelector('.ta_icon_btn').onclick = () => { taskStates['301'].finished = true; };
     await env.open(); env.ui.querySelector('[data-learning-mode="single"]').click(); await env.start();
     env.advance(120000); await env.tick(); await env.timers();
     assert.equal(env.ui.querySelector('[data-state]').textContent, '本次已结束');
     assert.equal(JSON.parse(env.win.sessionStorage.getItem('xy-video-helper-v1')).navigation, null);
-    assert.equal(env.ui.querySelector('[data-completion-for="301"]').textContent, '未完成');
+    assert.equal(env.ui.querySelector('[data-completion-for="301"]').textContent, '已完成');
     env.dom.window.close();
 });
 

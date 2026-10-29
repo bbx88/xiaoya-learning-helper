@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小雅视频连播助手
 // @namespace    local.xiaoya.video
-// @version      1.0.0
+// @version      1.0.1
 // @description  视频与课程资料连续学习，自选全部或未完成队列，记住播放进度，按课程缓存今日学习时长。
 // @author       波波侠
 // @license      MIT
@@ -17,13 +17,15 @@
 (() => {
     'use strict';
 
-    const VERSION = '1.0.0';
+    const VERSION = '1.0.1';
     const collator = new Intl.Collator('zh-CN', { numeric: true });
     const isVideo = node => Number(node.type) === 9 ||
         /^video\//i.test(node.mimetype || '') ||
         /\.(mp4|webm|m4v|mov|mkv|avi|flv|m3u8)$/i.test(node.name || '');
     const isSelfStudy = node => Number(node.task_type ?? node.task?.task_type ?? node.property?.task_type) === 1 ||
         [node.tag, node.task_label, node.task?._taskTypeText].some(label => label === '自主观看');
+    const isReadingTask = node => !isVideo(node) && ((node.task_type ?? node.task?.task_type ?? node.property?.task_type) == null
+        ? isSelfStudy(node) : Number(node.task_type ?? node.task?.task_type ?? node.property?.task_type) === 1);
     const isPresentation = node => /\.pptx?$/i.test(node.name || '') ||
         /^application\/(?:vnd\.ms-powerpoint|vnd\.openxmlformats-officedocument\.presentationml\.(?:presentation|slideshow|template))$/i.test((node.mimetype || '').split(';')[0].trim());
     const isStudyResource = node => Number(node.type) !== 1 && (isVideo(node) || isSelfStudy(node) || isPresentation(node) || Number(node.type) === 6);
@@ -301,7 +303,10 @@
         persist();
     }
     function targetDocumentMs(node = currentNode()) {
-        return (settings.resourceMinutes[String(node?.id)] ?? settings.documentMinutes) * 60000;
+        const planned = (settings.resourceMinutes[String(node?.id)] ?? settings.documentMinutes) * 60000;
+        const minimum = Number(node?.watch_min_minutes);
+        return node && isReadingTask(node) && Number.isFinite(minimum) && minimum > 0
+            ? Math.max(planned, minimum * 60000) : planned;
     }
     function selectedResource(node) {
         return settings.resourceKinds[isVideo(node) ? 'videos' : 'other'];
@@ -898,7 +903,8 @@
         const active = running && documentClock.ready && !navigation && !hasOpenDialog() && (background || !document.hidden);
         updateDocumentClock(active);
         if (active) {
-            report(`正在阅读${resourceKind(node)}，停留 ${targetDocumentMs(node) / 60000} 分钟后${settings.mode === 'single' ? '结束本次学习' : '切换下一项'}。`);
+            report(documentClock.taskCompletion?.clicked ? '任务完成状态待确认，正在等待平台返回结果…'
+                : `正在阅读${resourceKind(node)}，停留 ${targetDocumentMs(node) / 60000} 分钟后${settings.mode === 'single' ? '结束本次学习' : '切换下一项'}。`);
             if (documentClock.elapsedMs >= targetDocumentMs(node)) scheduleResourceNext(current.node, null, 0);
         }
         if (navigation && documentClock.ready) finishNavigation();
@@ -1381,11 +1387,63 @@
         if (!current || video !== currentVideo || !currentVideo.ended) return;
         scheduleResourceNext(current.node, currentVideo, 5000);
     }
+    function documentReadyForCompletion() {
+        const body = document.querySelector('.group-resource-body .group-resource-content');
+        return documentClock?.ready && !!body && !hasOpenDialog() &&
+            !body.querySelector('[aria-busy="true"], .ant-spin-spinning, .ant-result-error, .resource-error, [data-preview-error="true"]') &&
+            ![...document.querySelectorAll('.group-resource-body .ant-result-title')].some(element => element.textContent?.replace(/\s/g, '') === '文件预览确认');
+    }
+    async function finishDocumentTask(node, state, stillCurrent) {
+        if (state?.complete === true) return true;
+        const attempt = documentClock.taskCompletion ||= { startedAt: Date.now(), checkedAt: 0, clicked: false, failed: false };
+        attempt.checkedAt = Date.now();
+        const fail = message => { attempt.failed = true; stop(message); return false; };
+        if (!taskIdentifier(node)) return fail('自主观看任务缺少有效任务标识，请手动完成后继续学习。');
+        if (!stillCurrent()) return false;
+        if (hasOpenDialog()) return fail('平台有待处理的提示，请处理后继续完成任务。');
+        if (attempt.clicked) {
+            if (Date.now() - attempt.startedAt >= 30000) return fail('完成任务后平台尚未确认成功，请检查任务状态后继续学习。');
+            report('任务完成状态待确认，正在等待平台返回结果…');
+            return false;
+        }
+        if (state?.error) return fail('任务完成状态读取失败，请重新检测后继续学习。');
+        const header = document.querySelector('.group-resource-header');
+        const file = header?.querySelector('.header-file');
+        const normalize = value => String(value || '').replace(/\s/g, '');
+        const displayedName = normalize(file?.getAttribute('title') || file?.textContent);
+        const filename = normalize(node.name);
+        const namePrefix = displayedName.replace(/[….]+$/, '');
+        const matchesName = file && displayedName && (displayedName === filename ||
+            !file.getAttribute('title') && /[….]+$/.test(displayedName) && namePrefix.length > 0 && filename.startsWith(namePrefix));
+        if (!matchesName) return fail('未找到当前资料的任务操作栏，请手动完成任务后继续学习。');
+        const button = [...header.querySelectorAll('.ta_icon_btn, button, [role="button"]')].find(element =>
+            visible(element) && /^(点我完成任务|完成任务)$/.test(normalize(element.textContent)));
+        if (!button) return fail('未找到当前资料的“完成任务”按钮，请手动完成后继续学习。');
+        if (button.disabled || button.getAttribute('aria-disabled') === 'true' ||
+            button.matches('.disable, .disabled, .ant-btn-loading') || button.querySelector('.ant-spin-spinning')) {
+            if (Date.now() - attempt.startedAt >= 30000) return fail('“完成任务”按钮仍不可用，请检查平台任务条件后继续学习。');
+            report('任务完成待确认，正在等待“完成任务”按钮可用…');
+            return false;
+        }
+        if (!stillCurrent() || !documentReadyForCompletion()) return false;
+        attempt.clicked = true;
+        attempt.startedAt = Date.now();
+        button.click();
+        if (!stillCurrent()) return false;
+        const confirmed = await checkCompletion(node, true);
+        if (!stillCurrent()) return false;
+        if (confirmed?.complete === true) return true;
+        if (hasOpenDialog()) return fail('平台提示任务尚未完成，请处理提示后继续学习。');
+        report('任务完成状态待确认，正在等待平台返回结果…');
+        return false;
+    }
     function scheduleResourceNext(nodeId, currentVideo, delay) {
         const current = route();
         if (!running || !current || current.node !== nodeId || nextTimer || advancing) return;
         const index = queue.findIndex(node => String(node.id) === current.node);
         if (index < 0) { stop('无法在目录中定位当前资料，已停止'); return; }
+        const completeTask = !currentVideo && isReadingTask(queue[index]);
+        if (completeTask && documentClock?.taskCompletion && Date.now() - documentClock.taskCompletion.checkedAt < 2000) return;
         const next = nextVideo(queue, current.node, completions, skipCompleted);
         const finished = () => currentVideo ? video === currentVideo && currentVideo.ended
             : documentClock?.node === nodeId && documentClock.elapsedMs >= targetDocumentMs(queue[index]);
@@ -1398,8 +1456,14 @@
             if (!running || generation !== version || route()?.node !== current.node || !finished()) return;
             advancing = true;
             try {
-                await checkCompletion(queue[index], true);
-                if (!running || generation !== version || route()?.node !== current.node || !finished()) return;
+                const state = await checkCompletion(queue[index], true);
+                const stillCurrent = () => running && generation === version && route()?.course === current.course && route()?.node === current.node && finished();
+                if (!stillCurrent()) return;
+                if (completeTask) {
+                    if (!documentReadyForCompletion()) return;
+                    if (!await finishDocumentTask(queue[index], state, stillCurrent) || !stillCurrent()) return;
+                    if (!documentReadyForCompletion()) return;
+                }
                 if (settings.mode === 'single') {
                     const state = completions.get(nodeId);
                     stop(state?.kind === 'none' ? '本次资料浏览已结束。' : state?.complete === true ? '本次学习已结束，平台记录已完成。'
@@ -1595,7 +1659,10 @@
         resourceFailure = '';
         activeCourse = current.course;
         beginStudySession(current.course);
-        if (documentClock) documentClock.previewConfirmation = null;
+        if (documentClock) {
+            documentClock.previewConfirmation = null;
+            if (documentClock.taskCompletion?.failed) documentClock.taskCompletion = null;
+        }
         running = true;
         userPaused = false;
         persist();
