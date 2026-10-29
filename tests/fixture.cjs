@@ -26,7 +26,7 @@ async function setup(options = {}) {
     const win = dom.window;
     let hidden = false, paused = true, ended = false, interval;
     let rejectPlay = false, playCount = 0, readyState = options.readyState ?? 4, currentSrc = options.currentSrc || '';
-    let now = Date.now();
+    let now = options.now ?? Date.now();
     win.Date.now = () => now;
     const timeouts = new Map();
     let timerId = 0;
@@ -35,12 +35,16 @@ async function setup(options = {}) {
     win.document.hasFocus = () => !hidden;
     win.HTMLElement.prototype.getClientRects = function () { return this.isConnected && !this.hidden ? [{}] : []; };
     const video = win.document.querySelector('video');
-    let currentTime = 120;
+    let currentTime = options.currentTime ?? 120;
+    let duration = options.duration ?? 600, seekFailures = options.seekFailures ?? 0;
     Object.defineProperties(video, {
         paused: { get: () => paused }, ended: { get: () => ended },
-        readyState: { get: () => readyState }, duration: { get: () => 600 },
+        readyState: { get: () => readyState }, duration: { get: () => duration },
         currentSrc: { get: () => currentSrc },
-        currentTime: { get: () => currentTime, set: value => { currentTime = value; if (value === 0) ended = false; } }
+        currentTime: { get: () => currentTime, set: value => {
+            if (seekFailures > 0) { seekFailures--; throw new win.DOMException('Not seekable yet', 'InvalidStateError'); }
+            currentTime = value; if (value === 0) ended = false;
+        } }
     });
     video.play = async () => {
         playCount++;
@@ -59,6 +63,7 @@ async function setup(options = {}) {
     win.clearTimeout = id => timeouts.delete(id);
     if ((options.cookie ?? 'prd-access-token=test-only') !== '') win.document.cookie = `${options.cookie ?? 'prd-access-token=test-only'}; Path=/`;
     if (options.saved) win.sessionStorage.setItem('xy-video-helper-v1', JSON.stringify(options.saved));
+    for (const [key, value] of Object.entries(options.sessionStorage || {})) win.sessionStorage.setItem(key, value);
     for (const [key, value] of Object.entries(options.localStorage || {})) win.localStorage.setItem(key, value);
     const resources = options.resources || [
         { id: '301', parent_id: '200', type: 9, name: '1.mp4', sort_position: 1 },
@@ -104,6 +109,7 @@ async function setup(options = {}) {
         advance: ms => { now += ms; },
         ready: (state = 4, event = 'loadeddata') => { readyState = state; video.dispatchEvent(new win.Event(event)); },
         source: value => { currentSrc = value; },
+        duration: value => { duration = value; },
         playCount: () => playCount, rejectPlay: () => { rejectPlay = true; },
         end: () => { ended = true; video.dispatchEvent(new win.Event('ended')); } };
 }

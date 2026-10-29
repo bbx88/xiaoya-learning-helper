@@ -161,7 +161,7 @@ test('refresh detects a server-side completion change, ending alone does not com
     taskStates['301'] = { finished: true };
     env.ui.querySelector('[data-refresh]').click(); await env.flush();
     assert.equal(env.ui.querySelector('[data-completion-for="301"]').textContent, '已完成');
-    assert.equal(env.ui.querySelector('[data-skip]').checked, false);
+    assert.equal(env.ui.querySelector('[data-queue-policy]').value, 'unfinished');
     env.dom.window.close();
 });
 
@@ -310,7 +310,7 @@ test('floating launcher replaces the extra queue heading and dragging does not t
     env.dom.window.close();
 });
 
-test('self-study PPT, PDF and tagged materials join the ordered list while unrelated documents stay out', () => {
+test('ordinary PPT, self-study PDF and tagged materials join the ordered list while unrelated documents stay out', () => {
     const { buildQueue } = require('../xiaoya-video.user.js');
     const nodes = [
         { id: 'f', type: 1, parent_id: 'root', name: 'chapter' },
@@ -319,9 +319,10 @@ test('self-study PPT, PDF and tagged materials join the ordered list while unrel
         { id: 'pdf', type: 6, task: { task_type: '1' }, parent_id: 'f', name: '3.pdf' },
         { id: 'note', type: 2, tag: '自主观看', parent_id: 'f', name: '4' },
         { id: 'other', type: 6, parent_id: 'f', name: '5.pptx' },
-        { id: 'assignment', type: 7, task_type: 2, parent_id: 'f', name: '6' }
+        { id: 'assignment', type: 7, task_type: 2, parent_id: 'f', name: '6' },
+        { id: 'ordinary-pdf', type: 6, parent_id: 'f', name: '7.pdf' }
     ];
-    assert.deepEqual(buildQueue(nodes).map(node => node.id), ['v', 'p', 'pdf', 'note']);
+    assert.deepEqual(buildQueue(nodes).map(node => node.id), ['v', 'p', 'pdf', 'note', 'other', 'ordinary-pdf']);
 });
 
 test('entering the course scores page fetches tasks and historical time before opening the panel', async () => {
@@ -441,7 +442,8 @@ test('switching course replaces the name, clears the old progress and loads that
     assert.equal(env.ui.querySelector('[data-learning-mode="continuous"]').getAttribute('aria-pressed'), 'true');
     env.win.history.replaceState({}, '', '/app/jx-web/mycourse/100/scores'); await env.tick();
     assert.equal(env.ui.querySelector('[data-learning-mode="single"]').getAttribute('aria-pressed'), 'true');
-    assert.equal(env.ui.querySelector('[data-start]').disabled, true);
+    assert.equal(env.ui.querySelector('[data-start]').disabled, false);
+    assert.equal(env.ui.querySelector('[data-action-label]').textContent, '继续上次学习');
     env.dom.window.close();
 });
 
@@ -473,7 +475,7 @@ test('single-resource PPT ends at its planned duration without moving to the nex
     env.dom.window.close();
 });
 
-test('course and resource durations are saved separately and changes retain accrued dwell time', async () => {
+test('user default and course resource overrides are saved separately and changes retain accrued dwell time', async () => {
     const resources = [{ id: '301', parent_id: '200', type: 6, task_type: 1, task_id: 'ppt-task', name: '1.pptx' }];
     const env = await setup({ resources }); await env.start();
     env.advance(30000); await env.tick();
@@ -485,7 +487,8 @@ test('course and resource durations are saved separately and changes retain accr
     itemInput.value = '3'; itemInput.dispatchEvent(new env.win.Event('change'));
     assert.equal(env.ui.querySelector('[data-duration]').textContent, '03:00');
     let saved = JSON.parse(env.win.localStorage.getItem('xy-learning-settings-v1:test-user:100'));
-    assert.equal(saved.documentMinutes, 5);
+    assert.equal(saved.documentMinutes, undefined);
+    assert.equal(JSON.parse(env.win.localStorage.getItem('xy-learning-defaults-v1:test-user')).documentMinutes, 5);
     assert.equal(saved.resourceMinutes['301'], 3);
     defaultInput.value = '1'; defaultInput.dispatchEvent(new env.win.Event('change'));
     assert.match(env.ui.querySelector('[data-config-error]').textContent, /2 至 1440/);
@@ -628,22 +631,20 @@ test('single video hides continuous and nonvideo settings without clearing store
         { id: '302', parent_id: '200', type: 6, task_type: 1, name: '2.pptx' }
     ] });
     await env.open();
-    const skip = env.ui.querySelector('[data-skip]');
-    skip.checked = true; skip.dispatchEvent(new env.win.Event('change'));
+    const skip = env.ui.querySelector('[data-queue-policy]');
+    skip.value = 'unfinished'; skip.dispatchEvent(new env.win.Event('change'));
     const minutes = env.ui.querySelector('[data-default-minutes]');
     minutes.value = '5'; minutes.dispatchEvent(new env.win.Event('change'));
     env.ui.querySelector('[data-learning-mode="single"]').click();
     assert.equal(env.ui.querySelector('[data-continuous-settings]').hidden, true);
     assert.equal(env.ui.querySelector('[data-configuration]').hidden, true);
     assert.equal(env.ui.querySelector('[data-mute]').closest('.option').hidden, false);
-    assert.match(env.ui.querySelector('[data-mode-note]').textContent, /播放结束后停止/);
     env.ui.querySelector('[data-learning-mode="continuous"]').click();
     assert.equal(env.ui.querySelector('[data-continuous-settings]').hidden, false);
     assert.equal(env.ui.querySelector('[data-configuration]').hidden, false);
     assert.equal(env.ui.querySelector('[data-default-settings]').hidden, false);
-    assert.equal(skip.checked, true);
+    assert.equal(skip.value, 'unfinished');
     assert.equal(minutes.value, '5');
-    assert.match(env.ui.querySelector('[data-mode-note]').textContent, /自动学习下一项/);
     env.dom.window.close();
 });
 
@@ -658,13 +659,11 @@ test('single nonvideo shows only its override and continuous mode restores relev
     assert.equal(env.ui.querySelector('[data-mute]').closest('.option').hidden, true);
     const item = env.ui.querySelector('[data-resource-minutes]');
     item.value = '3'; item.dispatchEvent(new env.win.Event('change'));
-    assert.match(env.ui.querySelector('[data-mode-note]').textContent, /3 分钟后停止/);
     env.ui.querySelector('[data-learning-mode="continuous"]').click();
     assert.equal(env.ui.querySelector('[data-continuous-settings]').hidden, false);
     assert.equal(env.ui.querySelector('[data-default-settings]').hidden, false);
     assert.equal(env.ui.querySelector('[data-mute]').closest('.option').hidden, true, 'A nonvideo-only course has no mute option');
     assert.equal(item.value, '3');
-    assert.match(env.ui.querySelector('[data-mode-note]').textContent, /3 分钟后自动学习下一项/);
     env.dom.window.close();
 });
 
@@ -712,13 +711,13 @@ test('expanded controls show pause while playing and play while paused; launcher
     const env = await setup(); await env.start();
     assert.equal(env.ui.querySelector('[data-action-icon]').dataset.icon, 'pause');
     assert.equal(env.ui.querySelector('[data-action-icon]').querySelectorAll('rect').length, 2);
-    const headerIcon = env.ui.querySelector('.mark').innerHTML;
+    assert.equal(env.ui.querySelector('.head'), null);
+    assert.ok(env.ui.querySelector('[data-course-header][data-drag]'));
     assert.equal(env.ui.querySelector('[data-launcher-icon]').dataset.icon, 'assistant');
     const launcherIcon = env.ui.querySelector('[data-launcher-icon]').innerHTML;
     env.ui.querySelector('[data-start]').click(); await env.flush();
     assert.equal(env.video.paused, true);
     assert.equal(env.ui.querySelector('[data-action-icon]').dataset.icon, 'play');
-    assert.equal(env.ui.querySelector('.mark').innerHTML, headerIcon);
     env.ui.querySelector('[data-collapse]').click();
     assert.equal(env.ui.querySelector('[data-launcher-icon]').innerHTML, launcherIcon);
     env.dom.window.close();
@@ -750,7 +749,7 @@ test('manual navigation works in single mode while paused and ignores automatic 
         { id: '303', parent_id: '200', type: 9, task_id: 'c', name: '3.mp4', sort_position: 3 }
     ], taskStates: { '301': { finished: false }, '302': { finished: true }, '303': { finished: false } } });
     await env.start(); env.ui.querySelector('[data-start]').click(); await env.flush();
-    const skip = env.ui.querySelector('[data-skip]'); skip.checked = true; skip.dispatchEvent(new env.win.Event('change'));
+    const skip = env.ui.querySelector('[data-queue-policy]'); skip.value = 'unfinished'; skip.dispatchEvent(new env.win.Event('change'));
     env.ui.querySelector('[data-learning-mode="single"]').click();
     env.ui.querySelector('[data-filter="unfinished"]').click();
     const next = env.ui.querySelector('[data-step="next"]');

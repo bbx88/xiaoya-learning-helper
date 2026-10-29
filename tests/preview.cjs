@@ -14,7 +14,7 @@ async function main() {
     for (const page of ['learning', 'paused', 'list', 'settings', 'settings-nonvideo', 'learning-single', 'settings-single-video', 'settings-single-nonvideo']) {
         const tab = page.startsWith('settings') ? 'settings' : page === 'learning-single' ? 'learning' : page;
         const items = page.includes('nonvideo') ? resources.map(node => node.id === '301' ? { ...node, type: 6, name: '2.1中国古代劳动思想.pptx' } : node) : resources;
-        const env = await setup({ resources: items, taskStates, minutes: 71 });
+        const env = await setup({ resources: items, taskStates, minutes: 71, localStorage: { 'xy-learning-settings-v1:test-user:100': JSON.stringify({ queuePolicy: 'all', skipCompleted: false }) } });
         await env.start();
         if (page.includes('single')) env.ui.querySelector('[data-learning-mode="single"]').click();
         if (tab === 'settings') env.ui.querySelector('[data-tab="settings"]').click();
