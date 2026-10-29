@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小雅视频连播助手
 // @namespace    local.xiaoya.video
-// @version      1.0.1
+// @version      1.0.2
 // @description  视频与课程资料连续学习，自选全部或未完成队列，记住播放进度，按课程缓存今日学习时长。
 // @author       波波侠
 // @license      MIT
@@ -17,7 +17,7 @@
 (() => {
     'use strict';
 
-    const VERSION = '1.0.1';
+    const VERSION = '1.0.2';
     const collator = new Intl.Collator('zh-CN', { numeric: true });
     const isVideo = node => Number(node.type) === 9 ||
         /^video\//i.test(node.mimetype || '') ||
@@ -313,6 +313,17 @@
     }
     function playbackQueue() {
         return settings.mode === 'continuous' && skipCompleted ? queue.filter(node => completions.get(String(node.id))?.kind !== 'none' && completions.get(String(node.id))?.complete !== true) : queue;
+    }
+    function resourceNeighbors() {
+        const index = queue.findIndex(node => String(node.id) === route()?.node);
+        const eligible = new Set(playbackQueue().map(node => String(node.id)));
+        let previous = null, next = null;
+        for (let i = 0; i < queue.length; i++) {
+            if (!eligible.has(String(queue[i].id))) continue;
+            if (i < index) previous = queue[i];
+            else if (i > index && !next) next = queue[i];
+        }
+        return { previous, next };
     }
     function allSelectedCompleted() {
         return auth.state === 'ready' && courseInfo.state === 'ready' && !loading && !completionBusy &&
@@ -708,11 +719,11 @@
         for (const input of ui.querySelectorAll('[data-resource-kind]')) input.disabled = configDisabled;
         find('[data-locate]').disabled = !node;
         const canNavigate = confirmed && courseInfo.state === 'ready' && !navigation;
-        const next = index >= 0 ? queue[index + 1] : queue[0];
+        const neighbors = resourceNeighbors();
         find('[data-neighbors]').hidden = !confirmed || !queue.length;
         for (const step of ui.querySelectorAll('[data-step]')) {
             const previous = step.dataset.step === 'previous';
-            const target = previous ? index > 0 ? queue[index - 1] : null : next;
+            const target = neighbors[step.dataset.step];
             const label = previous ? '上一项' : index < 0 ? '第一项' : '下一项';
             const name = target ? target.name || String(target.id) : previous ? index < 0 ? '请先选择任务' : '已是第一项' : '已是最后一项';
             const enabled = canNavigate && !!target;
@@ -1732,8 +1743,8 @@
         current?.focus({ preventScroll: true });
     };
     for (const link of ui.querySelectorAll('[data-step]')) link.onclick = event => {
-        const id = event.currentTarget.dataset.targetNode;
-        const node = queue.find(item => String(item.id) === id);
+        if (event.currentTarget.disabled) return;
+        const node = resourceNeighbors()[event.currentTarget.dataset.step];
         openResourceFromClick(event, node, queueCourse);
     };
     ui.addEventListener('keydown', event => {

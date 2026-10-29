@@ -2,15 +2,15 @@
 
 面向武汉理工大学小雅平台的浏览器用户脚本，支持视频连播、课程资料浏览、播放进度恢复，以及按课程保存今日学习时长。
 
-**当前版本：1.0.1** · [脚本文件](./xiaoya-video.user.js) · [脚本猫发布页][scriptcat-release] · [使用说明](./使用说明.md) · [更新记录](./CHANGELOG.md)
+**当前版本：1.0.2** · [脚本文件](./xiaoya-video.user.js) · [脚本猫发布页][scriptcat-release] · [使用说明](./使用说明.md) · [更新记录](./CHANGELOG.md)
 
 ## 安装与更新
 
 1. 安装并启用 ScriptCat（脚本猫）或 Tampermonkey。
-2. [前往脚本猫安装][scriptcat-release]；如需使用 GitHub 当前版本，可下载 [1.0.1 脚本](https://github.com/bbx88/xiaoya-learning-helper/releases/tag/v1.0.1)，或复制仓库中的 [完整脚本](./xiaoya-video.user.js) 到管理器。
+2. [前往脚本猫安装][scriptcat-release]；如需使用 GitHub 当前版本，可下载 [1.0.2 脚本](https://github.com/bbx88/xiaoya-learning-helper/releases/tag/v1.0.2)，或复制仓库中的 [完整脚本](./xiaoya-video.user.js) 到管理器。
 3. 登录小雅，刷新课程页面，点击蓝色书本按钮展开面板。
 
-已有旧版时，编辑原脚本，用新版全部代码替换并保存，再刷新课程页面。保留一个启用的版本，面板底部应显示 **v1.0.1**。保存编辑器不会替换已经运行的旧页面代码。
+已有旧版时，编辑原脚本，用新版全部代码替换并保存，再刷新课程页面。保留一个启用的版本，面板底部应显示 **v1.0.2**。保存编辑器不会替换已经运行的旧页面代码。
 
 ## 功能
 
@@ -43,6 +43,8 @@
 **默认“未完成”**：跳过平台已确认完成的任务或视频，未知状态仍保留。普通资料不属于待完成任务，需要选择“全部”才会自动浏览。
 
 **“全部”**：按所选类型浏览全部资料，包含已完成任务和普通课件，按顺序到最后一项停止，不循环。
+
+“上一项／下一项”的名称和点击目标也跟随当前学习队列：连续模式选“未完成”时跳过已完成项目和普通资料，选“全部”时按所选资料目录相邻顺序切换。单项模式按所选资料目录切换；列表搜索和显示筛选不影响这些按钮。
 
 选择会按账号和课程保存，修改立即生效。切换为“未完成”时，会跳过已完成的当前项；确认所选任务全部完成后，任务卡片显示“恭喜你，已经学完啦！”。只有普通资料的课程不误报完成。
 
@@ -101,7 +103,7 @@
 - 电脑休眠、浏览器冻结标签页或网络中断时，播放和切换可能暂停或延迟。
 - 页面结构或接口变化可能需要重新适配；反馈请提供版本、浏览器、管理器及复现步骤。
 
-1.0.1 的本地检查覆盖 131 项用例。该版本没有在已登录的真实课程中完成全流程验收，不保证平台一定累计时长。后续可增强真实平台兼容性验证、缓存清理和跨设备同步；这些不属于当前版本的功能承诺。
+1.0.2 的本地检查覆盖 139 项用例。该版本没有在已登录的真实课程中完成全流程验收，不保证平台一定累计时长。后续可增强真实平台兼容性验证、缓存清理和跨设备同步；这些不属于当前版本的功能承诺。
 
 ## 开发与验证
 
@@ -110,13 +112,13 @@
 ```sh
 npm ci --prefix .tools
 node --check xiaoya-video.user.js
-node --test tests/verify.cjs tests/playback-memory.cjs tests/presentation-panel.cjs tests/queue-options.cjs tests/preview-confirmation.cjs tests/resource-status.cjs tests/user-defaults.cjs tests/session-duration.cjs tests/task-completion.cjs
+node --test tests/verify.cjs tests/playback-memory.cjs tests/presentation-panel.cjs tests/queue-options.cjs tests/preview-confirmation.cjs tests/resource-status.cjs tests/user-defaults.cjs tests/session-duration.cjs tests/task-completion.cjs tests/queue-neighbors.cjs
 git diff --check
 ```
 
-测试使用模拟课程、播放器、时间和只读 GET 接口，不连接真实学习账号。覆盖登录与课程切换、播放恢复、队列、预览确认、普通资料分类、面板布局、默认时间迁移、本次／今日时长以及自主观看任务的完成与跳转。
+测试使用模拟课程、播放器、时间和只读 GET 接口，不连接真实学习账号。覆盖登录与课程切换、播放恢复、队列、预览确认、普通资料分类、面板布局、默认时间迁移、本次／今日时长以及自主观看任务的完成与跳转、队列相邻资源导航。
 
-`node tests/preview.cjs` 生成静态布局预览。`node tests/navigation.cjs` 是独立的 Chrome 本地模拟导航检查，需自行配置浏览器；未纳入本次 1.0.1 回归结果。仓库旧截图仅保留为历史素材，当前界面以脚本和静态预览为准。
+`node tests/preview.cjs` 生成静态布局预览。`node tests/navigation.cjs` 是独立的 Chrome 本地模拟导航检查，需自行配置浏览器；未纳入本次 1.0.2 回归结果。仓库旧截图仅保留为历史素材，当前界面以脚本和静态预览为准。
 
 ## 目录
 

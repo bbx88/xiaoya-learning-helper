@@ -595,6 +595,8 @@ test('search and completion filters affect only the displayed materials and reta
         { id: '303', parent_id: '200', type: 9, task_id: 'c', name: '劳动.mp4', sort_position: 3 }
     ], taskStates: { '301': { finished: false }, '302': { finished: true }, '303': { finished: false } } });
     await env.start(); env.ui.querySelector('[data-tab="list"]').click();
+    const nextBeforeSearch = env.ui.querySelector('[data-next-link]').dataset.targetNode;
+    assert.equal(nextBeforeSearch, '303', 'Pending queue navigation skips the completed PPT before any list filtering');
     const search = env.ui.querySelector('[data-search]');
     search.value = '绪论'; search.dispatchEvent(new env.win.Event('input'));
     assert.equal(env.ui.querySelectorAll('[data-list] [data-node]').length, 2);
@@ -603,7 +605,7 @@ test('search and completion filters affect only the displayed materials and reta
     assert.equal(env.ui.querySelector('[data-list] [data-node]').dataset.node, '302');
     assert.equal(env.ui.querySelector('[data-list] .num').textContent, '02');
     assert.equal(env.video.paused, false);
-    assert.equal(env.ui.querySelector('[data-next-link]').dataset.targetNode, '302');
+    assert.equal(env.ui.querySelector('[data-next-link]').dataset.targetNode, nextBeforeSearch);
     env.dom.window.close();
 });
 
